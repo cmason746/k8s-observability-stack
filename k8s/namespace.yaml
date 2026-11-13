@@ -1,0 +1,6 @@
+# A namespace to group everything belonging to the shop app.
+# The monitoring tools will go in their own namespace later.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop

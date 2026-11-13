@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders               # Becomes the DNS name: http://orders inside the shop namespace
+  namespace: shop
+spec:
+  type: ClusterIP            # Reachable only from inside the cluster (the default)
+
+  # Send traffic to any pod with this label
+  selector:
+    app: orders
+
+  ports:
+    - name: http
+      port: 80               # The port callers use on the Service
+      targetPort: http       # The pod port to forward to, by name (8000 in the Deployment)

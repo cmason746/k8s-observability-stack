@@ -1,0 +1,31 @@
+apiVersion: apps/v1          # Which version of the Kubernetes API defines this object type
+kind: Deployment             # The object type
+metadata:
+  name: orders
+  namespace: shop
+  labels:
+    app: orders              # A label on the Deployment itself (for finding it, not its pods)
+spec:
+  replicas: 2                # Desired state: two copies of the pod
+
+  # How the Deployment (through its ReplicaSet) finds the pods it owns.
+  # Must match the pod labels in the template below.
+  selector:
+    matchLabels:
+      app: orders
+
+  # The pod template: what every pod created by this Deployment looks like
+  template:
+    metadata:
+      labels:
+        app: orders          # The label the selector above and the Service look for
+    spec:
+      containers:
+        - name: orders
+          image: orders:0.1.0
+          # Use the image already on the node and only download it if it's missing.
+          # Needed for kind, where the image was loaded in rather than pushed to a registry.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http           # A name the Service can refer to instead of the number
+              containerPort: 8000  # The port uvicorn listens on inside the container
