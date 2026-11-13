@@ -1,0 +1,11 @@
+# Settings for the orders service, kept outside the image.
+# Each key becomes an environment variable in the orders containers
+# (see envFrom in deployment.yaml). Values are always strings.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-config
+  namespace: shop
+data:
+  LOG_LEVEL: "info"
+  INITIAL_STOCK: '{"widget": 500, "gadget": 50, "gizmo": 20}'
