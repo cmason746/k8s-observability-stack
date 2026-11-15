@@ -34,3 +34,40 @@ spec:
           envFrom:
             - configMapRef:
                 name: orders-config
+
+          # How much CPU and memory this container gets.
+          # CPU is in millicores (1000m = 1 core). Memory is in mebibytes (Mi).
+          resources:
+            # Requests: what the scheduler reserves for the pod on a node.
+            # A pod is only placed on a node with this much unreserved capacity.
+            requests:
+              cpu: 50m         # 5% of a core, enough for a small idle API
+              memory: 64Mi     # Roughly what Python and FastAPI use at rest
+            # Limits: the hard ceiling, enforced while the container runs.
+            # Over the CPU limit, the container is slowed down (throttled).
+            # Over the memory limit, the container is killed (OOMKilled) and restarted.
+            limits:
+              cpu: 250m
+              memory: 128Mi
+
+          # Readiness: "can this pod take traffic right now?"
+          # While it fails, the pod is removed from the Service's endpoints (no traffic),
+          # but it is NOT restarted. A rollout also waits for new pods to be ready
+          # before removing old ones.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http           # The named container port above
+            periodSeconds: 5       # Check every 5 seconds
+            failureThreshold: 3    # 3 failures in a row (about 15s) marks it not ready
+
+          # Liveness: "is this container stuck or broken?"
+          # If it fails, the kubelet kills and restarts the container.
+          # Kept more lenient than readiness so a slow moment doesn't cause a restart.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10  # Give the app time to start before the first check
+            periodSeconds: 10
+            failureThreshold: 3      # About 30s of failures before a restart
