@@ -15,7 +15,10 @@ import socket
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from prometheus_client import Counter
 from pydantic import BaseModel
+
+import http_metrics
 
 # --- Settings, read once when the app starts ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
@@ -23,6 +26,12 @@ INVENTORY_URL = os.getenv("INVENTORY_URL", "http://inventory")
 
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("orders")
+# httpx logs every call to inventory at INFO, which drowns out the app's own lines
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# Business metric: successful orders per product. Only counted after inventory
+# accepts the order, so made-up product names can't add new label values.
+ORDERS_PLACED = Counter("orders_placed_total", "Orders placed successfully", ["product"])
 
 # The pod's name. Returned in responses so you can see which pod answered.
 POD_NAME = socket.gethostname()
@@ -32,6 +41,7 @@ POD_NAME = socket.gethostname()
 inventory = httpx.Client(base_url=INVENTORY_URL, timeout=2.0)
 
 app = FastAPI(title="orders")
+http_metrics.setup(app)  # RED metrics on /metrics, and quieter access logs
 log.info("Using inventory at %s", INVENTORY_URL)
 
 
@@ -80,6 +90,7 @@ def place_order(order: Order):
         raise HTTPException(status_code=response.status_code, detail=detail)
 
     reserved = response.json()
+    ORDERS_PLACED.labels(order.product).inc()  # One per order, whatever the quantity
     log.info("Order placed: %s x%d, %d left", order.product, order.quantity, reserved["remaining_stock"])
     return {
         "product": order.product,

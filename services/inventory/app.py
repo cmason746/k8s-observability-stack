@@ -19,7 +19,10 @@ import socket
 import redis
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from prometheus_client.core import REGISTRY, GaugeMetricFamily
 from pydantic import BaseModel
+
+import http_metrics
 
 # --- Settings, read once when the app starts ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
@@ -51,6 +54,32 @@ return redis.call('HINCRBY', KEYS[1], ARGV[1], -tonumber(ARGV[2]))
 """)
 
 app = FastAPI(title="inventory")
+http_metrics.setup(app)  # RED metrics on /metrics, and quieter access logs
+
+
+class StockCollector:
+    """Business metric: current stock per product, as a gauge.
+
+    Read from Redis at the moment Prometheus scrapes, rather than tracked in the
+    app, because the stock lives in Redis and changes through every pod. Both
+    inventory pods report the same numbers, so queries use max() across them.
+    """
+
+    def describe(self):
+        # Declares the metric without touching Redis when the app starts
+        return [GaugeMetricFamily("inventory_stock", "Current stock per product", labels=["product"])]
+
+    def collect(self):
+        gauge = GaugeMetricFamily("inventory_stock", "Current stock per product", labels=["product"])
+        try:
+            for product, quantity in db.hgetall(STOCK_KEY).items():
+                gauge.add_metric([product], int(quantity))
+        except redis.RedisError:
+            pass  # No stock values while Redis is down; the RED metrics show the errors
+        yield gauge
+
+
+REGISTRY.register(StockCollector())
 
 
 def seed_stock():

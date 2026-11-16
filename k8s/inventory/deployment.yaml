@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: inventory
-          image: inventory:0.2.0
+          image: inventory:0.3.0
           imagePullPolicy: IfNotPresent   # Loaded into kind, not pulled from a registry
           ports:
             - name: http

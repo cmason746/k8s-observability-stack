@@ -1,0 +1,23 @@
+# Tells Prometheus to scrape the shop services.
+#
+# A ServiceMonitor is a custom object type added by the Prometheus Operator, so
+# kube-prometheus-stack must be installed before this can be applied. The operator
+# reads it and adds a scrape job to Prometheus's config.
+#
+# It works like a Service picking its pods: it selects Services by label, then
+# Prometheus scrapes every ready pod behind each matching Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop
+  namespace: shop
+spec:
+  # Any Service in this namespace with this label gets scraped.
+  # Orders and inventory have it; Redis and loadgen don't serve /metrics.
+  selector:
+    matchLabels:
+      metrics: enabled
+  endpoints:
+    - port: http           # The Service's port name, not a number
+      path: /metrics
+      interval: 15s        # Twice as often as the 30s default, for livelier graphs

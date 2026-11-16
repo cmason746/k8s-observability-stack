@@ -26,10 +26,11 @@ spec:
                 name: loadgen-config
           # No probes: it serves no traffic, so readiness means nothing, and if
           # the process crashes the kubelet restarts it without a liveness probe
+          # Right-sized from Grafana: it uses about 17Mi, so the request was 4x too big
           resources:
             requests:
               cpu: 20m
-              memory: 64Mi
+              memory: 32Mi
             limits:
               cpu: 100m
-              memory: 128Mi
+              memory: 64Mi

@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: inventory            # DNS name: orders calls http://inventory
   namespace: shop
+  labels:
+    metrics: enabled         # Picked up by the shop ServiceMonitor, so Prometheus scrapes it
 spec:
   type: ClusterIP
   selector:

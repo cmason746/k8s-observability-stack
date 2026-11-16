@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: orders
-          image: orders:0.3.0
+          image: orders:0.4.1
           # Use the image already on the node and only download it if it's missing.
           # Needed for kind, where the image was loaded in rather than pushed to a registry.
           imagePullPolicy: IfNotPresent

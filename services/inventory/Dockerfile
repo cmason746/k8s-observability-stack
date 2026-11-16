@@ -10,7 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Then copy in the code
-COPY app.py .
+COPY *.py ./
 
 # Run as a normal user rather than root, which is safer
 RUN useradd --create-home appuser
