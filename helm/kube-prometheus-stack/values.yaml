@@ -1,0 +1,45 @@
+# Our settings for the kube-prometheus-stack chart (version pinned in the install command).
+# Only what differs from the chart's defaults goes here.
+#
+# Install or upgrade:
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     --version 93.3.0 -n monitoring --create-namespace -f helm/kube-prometheus-stack/values.yaml
+
+prometheus:
+  prometheusSpec:
+    # By default Prometheus only picks up ServiceMonitors, PodMonitors and alert rules
+    # labelled with this Helm release's name. Turn that off so it picks up any of them,
+    # in any namespace, including the ones we write for the shop services.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    # Keep 2 days of metrics. There's no persistent storage, so they're lost if the
+    # Prometheus pod is replaced anyway.
+    retention: 2d
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+# On kind, these control plane components only listen inside their own node container,
+# so Prometheus can't reach them. Left on, they show as permanently "down" targets and
+# fire alerts. On a real cluster (or EKS, where AWS hides the control plane) this differs.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Grafana otherwise keeps the chart defaults: Prometheus is set up as its data source,
+# and the standard Kubernetes dashboards are included. The admin password is in the
+# monitoring-grafana Secret, not here.
+grafana:
+  # Show the built-in dashboards in the viewer's own time zone rather than UTC
+  defaultDashboardsTimezone: browser
