@@ -1,26 +1,25 @@
 """Orders API for the online shop.
 
-Lists products and places orders. Stock is held in memory for now, so each
-pod has its own separate copy. Redis replaces this with shared stock later.
+Lists products and places orders. Stock is owned by the inventory service,
+which orders calls over HTTP using its Kubernetes Service name.
 
 Settings come from environment variables, which Kubernetes fills in from the
 orders ConfigMap:
   LOG_LEVEL      How much the app logs (debug, info, warning, error)
-  INITIAL_STOCK  Starting stock as JSON, for example {"widget": 100}
+  INVENTORY_URL  Base URL of the inventory service, for example http://inventory
 """
 
-import json
 import logging
 import os
 import socket
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # --- Settings, read once when the app starts ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
-DEFAULT_STOCK = {"widget": 100, "gadget": 50, "gizmo": 20}
-STOCK = json.loads(os.environ["INITIAL_STOCK"]) if "INITIAL_STOCK" in os.environ else dict(DEFAULT_STOCK)
+INVENTORY_URL = os.getenv("INVENTORY_URL", "http://inventory")
 
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("orders")
@@ -28,8 +27,12 @@ log = logging.getLogger("orders")
 # The pod's name. Returned in responses so you can see which pod answered.
 POD_NAME = socket.gethostname()
 
+# One shared HTTP client, reusing connections. A short timeout so a slow
+# inventory service doesn't hang orders requests.
+inventory = httpx.Client(base_url=INVENTORY_URL, timeout=2.0)
+
 app = FastAPI(title="orders")
-log.info("Starting with stock %s", STOCK)
+log.info("Using inventory at %s", INVENTORY_URL)
 
 
 class Order(BaseModel):
@@ -37,33 +40,50 @@ class Order(BaseModel):
     quantity: int = 1
 
 
+def call_inventory(method: str, path: str, **kwargs) -> httpx.Response:
+    """Call inventory, turning connection problems and server errors into a 503."""
+    try:
+        response = inventory.request(method, path, **kwargs)
+    except httpx.HTTPError as exc:
+        log.error("Inventory unreachable: %s", exc)
+        raise HTTPException(status_code=503, detail="Inventory unavailable")
+    if response.status_code >= 500:
+        log.error("Inventory returned %d", response.status_code)
+        raise HTTPException(status_code=503, detail="Inventory unavailable")
+    return response
+
+
 @app.get("/health")
 def health():
+    """Liveness and readiness. Deliberately doesn't check inventory, so an
+    inventory problem doesn't take orders out of service too."""
     return {"status": "ok"}
 
 
 @app.get("/products")
 def list_products():
     log.debug("Listing products")
-    return {"products": STOCK, "served_by": POD_NAME}
+    stock = call_inventory("GET", "/stock").json()["stock"]
+    return {"products": stock, "served_by": POD_NAME}
 
 
 @app.post("/orders", status_code=201)
 def place_order(order: Order):
-    if order.product not in STOCK:
-        log.warning("Order for unknown product %s", order.product)
-        raise HTTPException(status_code=404, detail=f"Unknown product: {order.product}")
     if order.quantity < 1:
         raise HTTPException(status_code=400, detail="Quantity must be at least 1")
-    if STOCK[order.product] < order.quantity:
-        log.warning("Not enough stock for %s x%d", order.product, order.quantity)
-        raise HTTPException(status_code=409, detail="Not enough stock")
 
-    STOCK[order.product] -= order.quantity
-    log.info("Order placed: %s x%d, %d left", order.product, order.quantity, STOCK[order.product])
+    response = call_inventory("POST", "/reserve", json=order.model_dump())
+    if response.status_code != 200:
+        # Pass inventory's 404 (unknown product) or 409 (not enough stock) straight back
+        detail = response.json().get("detail")
+        log.warning("Order rejected: %s x%d: %s", order.product, order.quantity, detail)
+        raise HTTPException(status_code=response.status_code, detail=detail)
+
+    reserved = response.json()
+    log.info("Order placed: %s x%d, %d left", order.product, order.quantity, reserved["remaining_stock"])
     return {
         "product": order.product,
         "quantity": order.quantity,
-        "remaining_stock": STOCK[order.product],
+        "remaining_stock": reserved["remaining_stock"],
         "served_by": POD_NAME,
     }

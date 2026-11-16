@@ -8,4 +8,6 @@ metadata:
   namespace: shop
 data:
   LOG_LEVEL: "info"
-  INITIAL_STOCK: '{"widget": 500, "gadget": 50, "gizmo": 20}'
+  # The inventory Service name. Cluster DNS turns it into the Service's IP,
+  # because orders and inventory are in the same namespace.
+  INVENTORY_URL: "http://inventory"

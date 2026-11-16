@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: shop
+  labels:
+    app: inventory
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+    spec:
+      containers:
+        - name: inventory
+          image: inventory:0.1.0
+          imagePullPolicy: IfNotPresent   # Loaded into kind, not pulled from a registry
+          ports:
+            - name: http
+              containerPort: 8000
+
+          # Non-secret settings from the ConfigMap...
+          envFrom:
+            - configMapRef:
+                name: inventory-config
+          # ...and the password from the Secret, as one named variable
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+
+          # Readiness checks Redis too: if Redis is down, this pod stops getting
+          # traffic but is not restarted (restarting wouldn't fix Redis)
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2      # Allow for the 1s Redis timeout inside /ready
+            failureThreshold: 3
+
+          # Liveness stays shallow: it only checks the app itself answers
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

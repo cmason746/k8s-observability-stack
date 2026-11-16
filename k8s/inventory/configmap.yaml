@@ -1,0 +1,12 @@
+# Settings for the inventory service. The Redis password is not here:
+# it comes from the redis-auth Secret (see deployment.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-config
+  namespace: shop
+data:
+  LOG_LEVEL: "info"
+  INITIAL_STOCK: '{"widget": 500, "gadget": 50, "gizmo": 20}'
+  REDIS_HOST: "redis"        # The Redis Service name, resolved by cluster DNS
+  REDIS_PORT: "6379"

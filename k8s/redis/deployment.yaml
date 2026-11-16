@@ -1,0 +1,68 @@
+# Redis: the shared stock store used by the inventory service.
+#
+# A Deployment with no saved data, kept simple on purpose. If the pod restarts,
+# its data is gone and inventory reseeds the starting stock. The production
+# choice for a database is a StatefulSet with its own persistent storage.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: shop
+  labels:
+    app: redis
+spec:
+  replicas: 1                # One copy: Redis copies don't share data, so more would disagree
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine    # Official image, pulled from Docker Hub by the node
+          ports:
+            - name: redis
+              containerPort: 6379
+
+          # The password comes from the redis-auth Secret, created with kubectl
+          # rather than kept in Git
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+
+          # Start Redis with a password and with saving to disk turned off.
+          # Kubernetes replaces $(REDIS_PASSWORD) with the environment variable above.
+          args:
+            - redis-server
+            - --requirepass
+            - $(REDIS_PASSWORD)
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+
+          # A TCP probe just checks the port accepts connections,
+          # which avoids needing the password in the probe
+          readinessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
