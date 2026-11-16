@@ -99,6 +99,15 @@ def list_stock():
     return {"stock": stock, "served_by": POD_NAME}
 
 
+@app.post("/restock")
+def restock():
+    """Reset every product to its starting stock, like a delivery arriving.
+    Called on a schedule by the restock CronJob."""
+    db.hset(STOCK_KEY, mapping=INITIAL_STOCK)
+    log.info("Restocked to %s", INITIAL_STOCK)
+    return {"stock": INITIAL_STOCK, "served_by": POD_NAME}
+
+
 @app.post("/reserve")
 def reserve(item: Reservation):
     if item.quantity < 1:

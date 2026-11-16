@@ -1,0 +1,17 @@
+# Load generator settings. Change these and run
+# `kubectl rollout restart deployment/loadgen -n shop` to adjust the traffic.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loadgen-config
+  namespace: shop
+data:
+  TARGET_URL: "http://orders"
+  REQUESTS_PER_SECOND: "2"
+  PRODUCTS: "widget,gadget,gizmo"
+  # Relative shares of each kind of request (they don't need to add up to 100)
+  WEIGHT_BROWSE: "60"     # GET /products
+  WEIGHT_ORDER: "30"      # Valid orders (some become 409 when gizmo runs out)
+  WEIGHT_UNKNOWN: "7"     # Unknown product, 404
+  WEIGHT_INVALID: "3"     # Quantity 0, 400
+  SUMMARY_SECONDS: "30"

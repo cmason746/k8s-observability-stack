@@ -7,6 +7,8 @@ metadata:
   namespace: shop
 data:
   LOG_LEVEL: "info"
-  INITIAL_STOCK: '{"widget": 500, "gadget": 50, "gizmo": 20}'
+  # Sized against the load generator and the 5-minute restock: widget and gadget
+  # never run out, gizmo runs out shortly before each delivery (some 409s)
+  INITIAL_STOCK: '{"widget": 500, "gadget": 200, "gizmo": 100}'
   REDIS_HOST: "redis"        # The Redis Service name, resolved by cluster DNS
   REDIS_PORT: "6379"

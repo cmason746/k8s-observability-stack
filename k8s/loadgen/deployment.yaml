@@ -1,0 +1,35 @@
+# The load generator. A Deployment so it keeps running (and is recreated if
+# deleted), but with no Service: nothing calls it, it only calls orders.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: shop
+  labels:
+    app: loadgen
+spec:
+  replicas: 1                # More replicas would multiply the traffic
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: loadgen:0.2.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: loadgen-config
+          # No probes: it serves no traffic, so readiness means nothing, and if
+          # the process crashes the kubelet restarts it without a liveness probe
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

@@ -1,0 +1,38 @@
+# A scheduled "delivery": every 5 minutes, reset inventory to its starting stock.
+#
+# CronJob -> creates a Job on the schedule -> the Job runs a pod until it succeeds.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: restock
+  namespace: shop
+spec:
+  schedule: "*/5 * * * *"      # Standard cron syntax: every 5 minutes (in UTC)
+  concurrencyPolicy: Forbid    # Skip a run if the previous one is somehow still going
+  successfulJobsHistoryLimit: 3  # Keep the last 3 finished Jobs (and their pods) to inspect
+  failedJobsHistoryLimit: 3
+
+  # The Job created on each run
+  jobTemplate:
+    spec:
+      backoffLimit: 2            # Retry a failed pod up to 2 times before marking the Job failed
+      activeDeadlineSeconds: 60  # Give up on a run that takes longer than a minute
+
+      # The pod each Job runs
+      template:
+        spec:
+          # Run to completion, then stop. "Never" means a failed attempt gets a new pod
+          # (so each attempt stays visible) rather than restarting in the same pod.
+          restartPolicy: Never
+          containers:
+            - name: restock
+              image: curlimages/curl:8.11.1
+              # -f makes curl exit with an error on a 4xx/5xx, so the Job counts as failed
+              args: ["-sf", "-X", "POST", "http://inventory/restock"]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 32Mi
