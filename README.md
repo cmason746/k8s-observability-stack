@@ -55,21 +55,14 @@ All three apps are small Python (FastAPI) services.
 **Health checks**
 - **Readiness checks dependencies, liveness doesn't.** Inventory's readiness probe pings Redis, so when Redis is down its pods are taken out of the Service without being restarted, since a restart wouldn't fix Redis. Liveness only checks that the process answers, so a dependency blip can't restart every pod.
 - **Orders' readiness doesn't check inventory**, to avoid a cascading failure where an inventory outage takes orders out of service too.
-- **Readiness only stops new connections.** With Redis scaled to zero, inventory's pods went not ready within seconds, but kept receiving requests for the whole outage over connections orders had already opened (keep-alive), and answered them with slow 503s. Both services' error rates and latency climbed, and throughput dropped as the load generator waited on responses. Taking a pod out of a Service doesn't drain traffic that's already flowing, so callers that reuse connections need short timeouts, or a service mesh, to route around a bad pod.
 
-**Data and config**
+**Data and secrets**
 - **Redis is a Deployment with no persistent storage**, to keep the focus on the monitoring. Inventory reseeds the starting stock whenever Redis comes back empty. A production database would be a StatefulSet with persistent storage.
 - **The Redis password is generated at setup and never committed.** `make up` creates the Secret with a random value, only if it doesn't already exist.
 
-**Metrics**
-- **RED metrics are labelled with the route template, never the raw URL**, and requests that match no route are labelled `unmatched`, so cardinality stays bounded. Probe and scrape requests are left out of the metrics and the access logs.
-- **5xx counts as an error, and 4xx is shown separately.** The load generator sends invalid orders on purpose, and those are the caller's mistake, not a service failure.
-
-**Traffic and resources**
-- **The load generator opens a new connection for each request.** With keep-alive, every request went to one orders pod, because a Service picks a pod once per connection. Separate connections behave like separate users and spread the load.
-- **Requests and limits were right-sized from the dashboard.** The load generator used about a quarter of its memory request, so the request was cut from 64Mi to 32Mi.
-
-**Reproducibility**
+**Monitoring**
+- **RED metrics are labelled with the route template, never the raw URL**, and requests that match no route are labelled `unmatched`, so cardinality stays bounded.
+- **Requests and limits are right-sized from the dashboard.** The load generator used about a quarter of its memory request, so the request was cut from 64Mi to 32Mi.
 - **The dashboard is code.** Its JSON lives in this repo and is loaded through a ConfigMap labelled for Grafana's sidecar, so it survives Grafana restarts and appears on a fresh cluster.
 
 ## Screenshots
