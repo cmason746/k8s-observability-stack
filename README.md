@@ -8,43 +8,30 @@ It runs on a local kind cluster: four apps (an orders API, an inventory service,
 
 The services expose RED metrics (rate, errors, duration) and business metrics, the load generator keeps realistic traffic flowing, and a Grafana dashboard shows service health, stock levels and each pod's resource use against its requests and limits. The whole stack comes up from a fresh clone with `make up`.
 
-![Shop service overview dashboard](docs/images/dashboard.png)
+![RED panels from the shop dashboard, including a Redis outage at 17:33](docs/images/dashboard.png)
 
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph monitoring["namespace: monitoring"]
-    dash["dashboard ConfigMap"] -.->|loaded by sidecar| grafana["Grafana"]
-    grafana -->|PromQL| prom["Prometheus"]
-    operator["Prometheus Operator"] -.->|scrape config| prom
-    ksm["kube-state-metrics"]
-    ne["node-exporter<br/>DaemonSet"]
-  end
-
+flowchart LR
   subgraph shop["namespace: shop"]
-    loadgen["loadgen<br/>Deployment"] -->|HTTP| orders["orders API<br/>Deployment ×2"]
-    restock["restock<br/>CronJob, every 5 min"]
-    orders -->|HTTP| inventory["inventory<br/>Deployment ×2"]
-    restock -->|POST /restock| inventory
-    inventory --> redis[("Redis<br/>Deployment")]
-    sm["ServiceMonitor"]
+    loadgen --> orders["orders ×2"] --> inventory["inventory ×2"] --> redis[(Redis)]
+    restock["restock CronJob"] --> inventory
+    sm[ServiceMonitor]
   end
 
-  subgraph node["every node"]
-    kubelet["kubelet<br/>with cAdvisor"]
+  subgraph monitoring["namespace: monitoring"]
+    grafana[Grafana] --> prom[Prometheus]
   end
 
-  sm -.->|read by| operator
-  prom -->|scrapes /metrics| orders
-  prom -->|scrapes /metrics| inventory
-  prom -->|scrapes| ksm
-  prom -->|scrapes| ne
-  prom -->|scrapes| kubelet
+  prom -.->|scrapes| orders
+  prom -.->|scrapes| inventory
+  prom -.->|scrapes| infra["kubelet, node-exporter,<br/>kube-state-metrics"]
+  sm -.->|targets| prom
 ```
 
 - **Traffic** flows from the load generator to orders, which calls inventory, which keeps the stock in Redis. Every call uses a Service name, resolved by cluster DNS.
-- **Metrics are pulled.** Prometheus scrapes each pod's `/metrics` endpoint every 15 seconds. The ServiceMonitor tells it which pods to scrape, and pod CPU and memory come from the kubelet's built-in cAdvisor.
+- **Metrics are pulled.** Prometheus scrapes each pod's `/metrics` endpoint every 15 seconds. The ServiceMonitor tells it which pods to scrape, through the Prometheus Operator. Pod CPU and memory come from the kubelet's built-in cAdvisor, and object state (such as ready replicas) from kube-state-metrics.
 - **Grafana** queries Prometheus. The dashboard is a JSON file in this repo, loaded into Grafana from a ConfigMap.
 
 ## What's in it
@@ -66,8 +53,9 @@ All three apps are small Python (FastAPI) services.
 ## Design decisions
 
 **Health checks**
-- **Readiness checks dependencies, liveness doesn't.** Inventory's readiness probe pings Redis, so when Redis is down its pods stop receiving traffic without being restarted, since a restart wouldn't fix Redis. Liveness only checks that the process answers, so a dependency blip can't restart every pod.
-- **Orders' readiness doesn't check inventory**, to avoid a cascading failure where an inventory outage takes orders out of service too. Scaling Redis to zero shows the result: within about 15 seconds inventory's pods go not ready and the Service stops sending them traffic, so inventory's request rate falls to zero, while orders stays up and returns clean 503s. The errors show up at the caller, and the broken service just goes quiet, which is why a drop in request rate is worth watching as well as the error rate.
+- **Readiness checks dependencies, liveness doesn't.** Inventory's readiness probe pings Redis, so when Redis is down its pods are taken out of the Service without being restarted, since a restart wouldn't fix Redis. Liveness only checks that the process answers, so a dependency blip can't restart every pod.
+- **Orders' readiness doesn't check inventory**, to avoid a cascading failure where an inventory outage takes orders out of service too.
+- **Readiness only stops new connections.** With Redis scaled to zero, inventory's pods went not ready within seconds, but kept receiving requests for the whole outage over connections orders had already opened (keep-alive), and answered them with slow 503s. Both services' error rates and latency climbed, and throughput dropped as the load generator waited on responses. Taking a pod out of a Service doesn't drain traffic that's already flowing, so callers that reuse connections need short timeouts, or a service mesh, to route around a bad pod.
 
 **Data and config**
 - **Redis is a Deployment with no persistent storage**, to keep the focus on the monitoring. Inventory reseeds the starting stock whenever Redis comes back empty. A production database would be a StatefulSet with persistent storage.
@@ -86,13 +74,13 @@ All three apps are small Python (FastAPI) services.
 
 ## Screenshots
 
+The full dashboard, adding business metrics (orders per minute and stock by product) and pod CPU and memory against requests and limits. Click to enlarge:
+
+![Full shop dashboard](docs/images/dashboard-full.png)
+
 Prometheus scraping both orders pods and both inventory pods through the ServiceMonitor:
 
 ![Prometheus targets](docs/images/targets.png)
-
-The dashboard a couple of minutes after Redis is scaled to zero. Orders keeps serving and returns 503s, while inventory stops receiving traffic. Inventory's error rate is only worked out from the few requests it handled before going not ready, so it climbs as its earlier successful requests age out of the 5-minute window:
-
-![Dashboard during a Redis outage](docs/images/redis-outage.png)
 
 ## Running it
 
